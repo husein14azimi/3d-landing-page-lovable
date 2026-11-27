@@ -47,13 +47,14 @@ for (const [jsName, code] of jsContents) {
   jsContents.set(jsName, updated);
 }
 
-// Inline non-entry JS chunks as data-URL dynamic imports (topological / multi-pass for nested chunks)
-const nonEntryJsNames = jsFiles.filter((name) => name !== entryJsName);
+// Inline ALL JS chunks as data-URL dynamic imports (topological / multi-pass for nested chunks)
+// The entry chunk is also a data URL so any other chunk can reference it by data URL specifier.
 const dataUrls = new Map();
 
-// Build data URLs iteratively so if a non-entry chunk imports another, it gets resolved too
-for (let pass = 0; pass <= nonEntryJsNames.length; pass++) {
-  for (const name of nonEntryJsNames) {
+// Build data URLs iteratively so chunks referencing each other all resolve correctly
+const jsNames = [...jsFiles];
+for (let pass = 0; pass <= jsNames.length; pass++) {
+  for (const name of jsNames) {
     let code = jsContents.get(name);
     for (const [depName, depUrl] of dataUrls) {
       // Replace dynamic import() calls referencing the dependency chunk
@@ -67,33 +68,13 @@ for (let pass = 0; pass <= nonEntryJsNames.length; pass++) {
         `from\\s*(["'\`])(?:\\.\\/)?${escapeRegExp(depName)}\\1`,
         "g"
       );
-      code = code.replace(staticPattern, () => `from("${depUrl}")`);
+      code = code.replace(staticPattern, () => `from "${depUrl}"`);
     }
     jsContents.set(name, code);
     const b64 = Buffer.from(code, "utf8").toString("base64");
     dataUrls.set(name, `data:text/javascript;base64,${b64}`);
   }
 }
-
-// Replace dynamic imports AND static imports in the entry JS chunk
-let entryJs = jsContents.get(entryJsName);
-for (const [depName, depUrl] of dataUrls) {
-  // Dynamic import() calls
-  const dynPattern = new RegExp(
-    `import\\((["'\`])(?:\\.\\/)?${escapeRegExp(depName)}\\1\\)`,
-    "g"
-  );
-  entryJs = entryJs.replace(dynPattern, () => `import("${depUrl}")`);
-  // Static import ... from "..." statements
-  const staticPattern = new RegExp(
-    `from\\s*(["'\`])(?:\\.\\/)?${escapeRegExp(depName)}\\1`,
-    "g"
-  );
-  entryJs = entryJs.replace(staticPattern, () => `from("${depUrl}")`);
-}
-
-// Escape </script and </style so HTML parser never terminates tags prematurely
-const safeEntryJs = entryJs.replace(/<\/script/gi, "<\\/script");
 
 // Inline CSS <link rel="stylesheet" ...> tags using replacer functions ($-safe)
 for (const [cssName, css] of cssContents) {
@@ -122,10 +103,14 @@ html = html.replace(
   "scripts:[]"
 );
 
-// Inline the entry script using a replacer function ($-safe!)
+// Bootstrap by dynamically importing the entry chunk's data URL
+const entryDataUrl = dataUrls.get(entryJsName);
+if (!entryDataUrl) {
+  throw new Error(`No data URL built for entry chunk ${entryJsName}`);
+}
 html = html.replace(
   /<script\b[^>]*\bsrc="(?:\/?\.\/)?assets\/[^"]+\.js"[^>]*><\/script>/,
-  () => `<script type="module">${safeEntryJs}</script>`
+  () => `<script type="module">import("${entryDataUrl}")</script>`
 );
 
 // Sanity check: no remaining references to assets/ in HTML
