@@ -17,5 +17,11 @@ export default defineConfig({
     prerender: {
       enabled: true,
     },
+    router: {
+      basepath: "/3d-landing-page-lovable/",
+    },
+  },
+  vite: {
+    base: "/3d-landing-page-lovable/",
   },
 });
