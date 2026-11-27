@@ -18,10 +18,12 @@ export default defineConfig({
       enabled: true,
     },
     router: {
-      basepath: "/3d-landing-page-lovable/",
+      // Use empty basepath since hash history doesn't need it
+      basepath: "/",
     },
   },
   vite: {
-    base: "/3d-landing-page-lovable/",
+    // Use relative base path so the build works regardless of GitHub repo name
+    base: "./",
   },
 });
